@@ -1,0 +1,5 @@
+{
+  "name": "claude-winter-night",
+  "owner": { "name": "honeydogmusic" },
+  "plugins": [{ "name": "winter-night", "source": "./" }]
+}
