@@ -1,5 +1,5 @@
 // 경로: winter-night/hooks/scene.ts
-// 기능: 겨울 밤 배경 SVG 문자열을 만든다. 컨텍스트 사용률에 따라 쌓인 눈의 높이와 눈발의 굵기가 달라진다.
+// 기능: 겨울 밤 배경 SVG 문자열을 만든다. 컨텍스트 사용률에 따라 쌓인 눈의 높이와 눈발의 굵기가 달라진다. IS_ANIMATED로 움직임을 켜고 끈다.
 
 /** 장면을 그리는 데 필요한 값 */
 export type SceneInput = {
@@ -13,6 +13,18 @@ export type SceneInput = {
 
 const WIDTH = 1600
 const HEIGHT = 1000
+
+/**
+ * 끝없이 되풀이되는 움직임(눈 내림·별 반짝임·전구·모닥불·연기)을 켤지 여부.
+ * 끄면 그림만 남는다. 눈 높이는 컨텍스트에 따라 바뀌되, 미끄러지지 않고 바로 바뀐다.
+ *
+ * 왜 전부 끄는가: Claude 앱은 장면의 CSS에 애니메이션 규칙이 한 줄이라도 있으면, 실제로 움직이는 것이
+ * 없어도 화면을 계속 다시 그린다(4K 59Hz에서 엔비디아 3D 약 28%, +27W). 이미 끝난 1회 재생도,
+ * `@media (prefers-reduced-motion){*{animation:none}}` 같은 "끄는" 규칙도 마찬가지다.
+ * 애니메이션 CSS가 전혀 없으면 같은 그림이 0%다 (2026-11-26 실측, README의 Motion and GPU cost 참조).
+ * 그래서 꺼진 상태에서는 style()이 animation이라는 글자를 한 번도 내보내지 않아야 한다
+ */
+const IS_ANIMATED: boolean = false
 
 /** 눈 색 */
 const SNOW = '#dde6fb'
@@ -332,7 +344,7 @@ type FlakeLayer = {
   edgesOnly: boolean
 }
 
-/** 눈송이 한 겹. 화면 높이만큼 위에 한 벌을 더 그려, 한 바퀴 내려와도 끊기지 않게 한다 */
+/** 눈송이 한 겹. 움직일 때는 화면 높이만큼 위에 한 벌을 더 그려, 한 바퀴 내려와도 끊기지 않게 한다 */
 function flakes(layer: FlakeLayer): string {
   const random = seeded(layer.seed)
   let out = ''
@@ -349,19 +361,31 @@ function flakes(layer: FlakeLayer): string {
     const y = random() * HEIGHT
     const r = layer.minRadius + random() * (layer.maxRadius - layer.minRadius)
 
-    out += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}"/><circle cx="${n(x)}" cy="${n(y - HEIGHT)}" r="${n(r)}"/>`
+    out += `<circle cx="${n(x)}" cy="${n(y)}" r="${n(r)}"/>`
+
+    // 위쪽 한 벌은 내려오는 동안에만 보이므로, 멈춘 그림에서는 그리지 않는다
+    if (IS_ANIMATED) {
+      out += `<circle cx="${n(x)}" cy="${n(y - HEIGHT)}" r="${n(r)}"/>`
+    }
   }
 
   return `<g class="fall f${layer.id}"><g class="sway w${layer.id}" fill="#eef2ff" opacity="${layer.opacity}">${out}</g></g>`
 }
 
 function style(shift: number): string {
+  const base = 'text{font-family:system-ui,sans-serif;text-anchor:middle}'
+
+  // 멈춘 그림: 애니메이션 CSS를 한 글자도 넣지 않는다 (IS_ANIMATED 설명 참조)
+  if (!IS_ANIMATED) {
+    return base
+  }
+
   // 눈이 쌓일 때보다 녹을 때 더 천천히 움직인다
   const seconds = shift < 0 ? 7 : 4
   const settle = shift === 0 ? '' : `.pile{animation:settle ${seconds}s ease-out 1}@keyframes settle{from{transform:translateY(${n(shift)}px)}}`
 
   return (
-    'text{font-family:system-ui,sans-serif;text-anchor:middle}' +
+    base +
     '.fall{animation:fall linear infinite}.fa{animation-duration:66s}.fb{animation-duration:47s}.fc{animation-duration:33s}' +
     '.sway{animation:sway ease-in-out infinite alternate}.wa{animation-duration:19s}.wb{animation-duration:15s}.wc{animation-duration:12s}' +
     '.t0{animation:twinkle 7s ease-in-out infinite alternate}.t1{animation:twinkle 9s ease-in-out -4s infinite alternate}.t2{animation:twinkle 11s ease-in-out -7s infinite alternate}' +
